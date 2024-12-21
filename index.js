@@ -90,6 +90,19 @@ async function run() {
       res.send(result);
     });
 
+    // foods related APIs
+    const foodsCollection = client.db("BiteManager").collection("foods");
+    app.get("/foods", async (req, res) => {
+      const result = await foodsCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.post("/foods", async (req, res) => {
+      const food = req.body;
+      const result = await foodsCollection.insertOne(food);
+      res.send(result);
+    });
+
   } finally {
     // Commenting out client.close() to keep connection alive
   }
