@@ -27,7 +27,7 @@ const verifyToken = (req, res, next) => {
     if (err) {
       return res.status(401).send({ message: "unauthorized access" });
     }
-    req.user = decoded;
+    req.decoded = decoded;
     next();
   });
 };
@@ -94,14 +94,30 @@ async function run() {
 
     // foods related APIs
     const foodsCollection = client.db("BiteManager").collection("foods");
-    app.get("/foods", async (req, res) => {
-      const searchQuery = req.query.search || ""; // Get the search term from the query parameters
-      const filter = searchQuery
-        ? { foodName: { $regex: searchQuery, $options: "i" } } // Case-insensitive partial match
-        : {};
-      const result = await foodsCollection.find(filter).toArray();
-      res.send(result);
+    app.get("/foods",verifyToken, async (req, res) => {
+      const email = req.query.email; // Extract email from query parameters
+      console.log(email)
+      const searchQuery = req.query.search || ""; // Extract search query, default to an empty string
+    
+      if (req.decoded.email !== email) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      // Build the filter object
+      const filter = {
+        ...(email ? { "addedBy.email": email } : {}), // Filter by addedBy.email if email is provided
+        ...(searchQuery ? { foodName: { $regex: searchQuery, $options: "i" } } : {}), // Add search query filter
+      };
+    
+      try {
+        const result = await foodsCollection.find(filter).toArray(); // Query the database with the filter
+        res.send(result); // Send the result back to the client
+      } catch (error) {
+        console.error("Error fetching foods:", error);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
     });
+    
 
     // get single food
     app.get("/food/:id", async (req, res) => {
@@ -110,12 +126,7 @@ async function run() {
       const result = await foodsCollection.findOne(query);
       res.send(result);
     });
-    app.get("/checkOut/:id", verifyToken, async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await foodsCollection.findOne(query);
-      res.send(result);
-    });
+    
 
     app.post("/foods", async (req, res) => {
       const food = req.body;
@@ -126,31 +137,27 @@ async function run() {
     /* ------------------------------------------------------- */
     // purchase related APIs
     const purchaseCollection = client.db("BiteManager").collection("purchase");
-    app.get("/purchase", async (req, res) => {
+    app.get("/purchase", verifyToken, async (req, res) => {
       const result = await purchaseCollection.find().toArray();
       res.send(result);
     });
 
-    app.post ("/purchase", verifyToken, async (req, res) => {
+    app.post("/purchase", verifyToken, async (req, res) => {
       const purchase = req.body;
       const result = await purchaseCollection.insertOne(purchase);
       const id = purchase.foodId;
       const query = { _id: new ObjectId(id) };
       const food = await foodsCollection.findOne(query);
       if (food) {
-        await foodsCollection.updateOne(
-          query,
-          {
-            $set: {
-              quantity: food.quantity - purchase.quantity,
-              purchaseCount: food.purchaseCount + purchase.quantity,
-            },
-          }
-        );
+        await foodsCollection.updateOne(query, {
+          $set: {
+            quantity: food.quantity - purchase.quantity,
+            purchaseCount: food.purchaseCount + purchase.quantity,
+          },
+        });
       }
       res.send(result);
     });
-    
   } finally {
     // Commenting out client.close() to keep connection alive
   }
