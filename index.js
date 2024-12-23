@@ -93,11 +93,22 @@ async function run() {
 
     // foods related APIs
     const foodsCollection = client.db("BiteManager").collection("foods");
+
     app.get("/foods", async (req, res) => {
         const email = req.query.email;
         const searchQuery = req.query.search || "";
-        const limit = parseInt(req.query.limit) || 0; // Optional query param to limit results
-        const sortBy = req.query.sortBy || null; // Optional query param to sort results (e.g., "purchaseCount")
+        const limit = parseInt(req.query.limit) || 0; 
+        const sortBy = req.query.sortBy || null; 
+    
+        if(email){
+            return verifyToken(req, res, async () => {
+                if(req.decoded.email !== email){
+                    return res.status(403).send({ message: "Forbidden access" });
+                }
+                const result = await foodsCollection.find().toArray();
+                res.send(result);
+            })
+        }
     
         const filter = {
             ...(email ? { "addedBy.email": email } : {}),
@@ -106,8 +117,8 @@ async function run() {
     
         try {
             const options = {
-                ...(sortBy ? { sort: { [sortBy]: -1 } } : {}), // Sort by specified field (e.g., purchaseCount)
-                ...(limit ? { limit } : {}), // Apply limit if provided
+                ...(sortBy ? { sort: { [sortBy]: -1 } } : {}), 
+                ...(limit ? { limit } : {}), 
             };
     
             const result = await foodsCollection.find(filter, options).toArray();
