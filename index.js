@@ -184,6 +184,17 @@ async function run() {
           return res.status(403).send({ message: "Forbidden access" });
         }
       const result = await purchaseCollection.find(query).toArray();
+
+      for(const purchase of result){
+        const query = { _id: new ObjectId(purchase.foodId) };
+        const food = await foodsCollection.findOne(query);
+        if (food) {
+            purchase.foodName = food.foodName;
+            purchase.price = food.price;
+            purchase.foodImage = food.foodImage;
+            purchase.foodOwner = food.addedBy.name;
+        }
+      }
       res.send(result);
     });
 
