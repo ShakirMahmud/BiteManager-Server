@@ -86,7 +86,6 @@ async function run() {
       res.send(result);
     });
 
-    // Protected route example
     app.get("/users", verifyToken, async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
@@ -94,21 +93,23 @@ async function run() {
 
     // foods related APIs
     const foodsCollection = client.db("BiteManager").collection("foods");
-    app.get("/foods",verifyToken, async (req, res) => {
+    app.get("/foods", async (req, res) => {
       const email = req.query.email; // Extract email from query parameters
-      console.log(email)
+      console.log(email);
       const searchQuery = req.query.search || ""; // Extract search query, default to an empty string
-    
-      if (req.decoded.email !== email) {
-        return res.status(403).send({ message: "Forbidden access" });
-      }
+
+      // if (req.decoded.email !== email) {
+      //   return res.status(403).send({ message: "Forbidden access" });
+      // }
 
       // Build the filter object
       const filter = {
         ...(email ? { "addedBy.email": email } : {}), // Filter by addedBy.email if email is provided
-        ...(searchQuery ? { foodName: { $regex: searchQuery, $options: "i" } } : {}), // Add search query filter
+        ...(searchQuery
+          ? { foodName: { $regex: searchQuery, $options: "i" } }
+          : {}), // Add search query filter
       };
-    
+
       try {
         const result = await foodsCollection.find(filter).toArray(); // Query the database with the filter
         res.send(result); // Send the result back to the client
@@ -117,7 +118,6 @@ async function run() {
         res.status(500).send({ message: "Internal Server Error" });
       }
     });
-    
 
     // get single food
     app.get("/food/:id", async (req, res) => {
@@ -126,11 +126,51 @@ async function run() {
       const result = await foodsCollection.findOne(query);
       res.send(result);
     });
-    
+    // Add food item with token verification
+    app.post("/foods", verifyToken, async (req, res) => {
+      try {
+        const food = req.body;
+        // Verify if the user email from token matches the addedBy email
+        if (food.addedBy.email !== req.decoded.email) {
+          return res.status(403).send({
+            success: false,
+            message: "Forbidden: Email mismatch",
+          });
+        }
+        const newFood = {
+          ...food,
+          purchaseCount: 0,
+        };
+        const result = await foodsCollection.insertOne(newFood);
+        res.send(result);
+      } catch (error) {
+        console.error("Error adding food:", error);
+        res.status(500).send({
+          success: false,
+          message: "Internal server error",
+          error: error.message,
+        });
+      }
+    });
 
-    app.post("/foods", async (req, res) => {
-      const food = req.body;
-      const result = await foodsCollection.insertOne(food);
+    // update food
+    app.put("/foods/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const foodUpdates = req.body;
+
+      const query = { _id: new ObjectId(id) };
+      const food = await foodsCollection.findOne(query);
+
+      if (!food || food.addedBy.email !== req.decoded.email) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      const { popularity, purchaseCount, addedBy, ...updateFields } =
+        foodUpdates;
+
+      const result = await foodsCollection.updateOne(query, {
+        $set: updateFields,
+      });
       res.send(result);
     });
 
@@ -138,7 +178,12 @@ async function run() {
     // purchase related APIs
     const purchaseCollection = client.db("BiteManager").collection("purchase");
     app.get("/purchase", verifyToken, async (req, res) => {
-      const result = await purchaseCollection.find().toArray();
+        const email = req.query.email;
+        const query = { buyerEmail: email };
+        if(req.decoded.email !== email){
+          return res.status(403).send({ message: "Forbidden access" });
+        }
+      const result = await purchaseCollection.find(query).toArray();
       res.send(result);
     });
 
