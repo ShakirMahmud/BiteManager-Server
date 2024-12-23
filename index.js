@@ -94,30 +94,31 @@ async function run() {
     // foods related APIs
     const foodsCollection = client.db("BiteManager").collection("foods");
     app.get("/foods", async (req, res) => {
-      const email = req.query.email; // Extract email from query parameters
-      console.log(email);
-      const searchQuery = req.query.search || ""; // Extract search query, default to an empty string
-
-      // if (req.decoded.email !== email) {
-      //   return res.status(403).send({ message: "Forbidden access" });
-      // }
-
-      // Build the filter object
-      const filter = {
-        ...(email ? { "addedBy.email": email } : {}), // Filter by addedBy.email if email is provided
-        ...(searchQuery
-          ? { foodName: { $regex: searchQuery, $options: "i" } }
-          : {}), // Add search query filter
-      };
-
-      try {
-        const result = await foodsCollection.find(filter).toArray(); // Query the database with the filter
-        res.send(result); // Send the result back to the client
-      } catch (error) {
-        console.error("Error fetching foods:", error);
-        res.status(500).send({ message: "Internal Server Error" });
-      }
+        const email = req.query.email;
+        const searchQuery = req.query.search || "";
+        const limit = parseInt(req.query.limit) || 0; // Optional query param to limit results
+        const sortBy = req.query.sortBy || null; // Optional query param to sort results (e.g., "purchaseCount")
+    
+        const filter = {
+            ...(email ? { "addedBy.email": email } : {}),
+            ...(searchQuery ? { foodName: { $regex: searchQuery, $options: "i" } } : {}),
+        };
+    
+        try {
+            const options = {
+                ...(sortBy ? { sort: { [sortBy]: -1 } } : {}), // Sort by specified field (e.g., purchaseCount)
+                ...(limit ? { limit } : {}), // Apply limit if provided
+            };
+    
+            const result = await foodsCollection.find(filter, options).toArray();
+            res.send(result);
+        } catch (error) {
+            console.error("Error fetching foods:", error);
+            res.status(500).send({ message: "Internal Server Error" });
+        }
     });
+    
+    
 
     // get single food
     app.get("/food/:id", async (req, res) => {
@@ -195,6 +196,22 @@ async function run() {
             purchase.foodOwner = food.addedBy.name;
         }
       }
+      res.send(result);
+    });
+
+    // get single purchase
+    app.get("/purchase/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) }; 
+      const result = await purchaseCollection.findOne(query);
+      res.send(result);
+    });
+
+    // delete purchase
+    app.delete("/purchase/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await purchaseCollection.deleteOne(query);
       res.send(result);
     });
 
