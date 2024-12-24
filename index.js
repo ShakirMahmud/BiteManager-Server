@@ -95,41 +95,48 @@ async function run() {
     const foodsCollection = client.db("BiteManager").collection("foods");
 
     app.get("/foods", async (req, res) => {
-        const email = req.query.email;
-        const searchQuery = req.query.search || "";
-        const limit = parseInt(req.query.limit) || 0; 
-        const sortBy = req.query.sortBy || null; 
-    
-        if(email){
-            return verifyToken(req, res, async () => {
-                if(req.decoded.email !== email){
-                    return res.status(403).send({ message: "Forbidden access" });
-                }
-                const result = await foodsCollection.find().toArray();
-                res.send(result);
-            })
-        }
-    
-        const filter = {
-            ...(email ? { "addedBy.email": email } : {}),
-            ...(searchQuery ? { foodName: { $regex: searchQuery, $options: "i" } } : {}),
+      const email = req.query.email;
+      const searchQuery = req.query.search || "";
+      const limit = parseInt(req.query.limit) || 0;
+      const sortBy = req.query.sortBy || null;
+      const page = req.query.page || 1;
+      const size = req.query.size || 9;
+
+      if (email) {
+        return verifyToken(req, res, async () => {
+          if (req.decoded.email !== email) {
+            return res.status(403).send({ message: "Forbidden access" });
+          }
+          const result = await foodsCollection
+            .find({ "addedBy.email": email })
+            .toArray();
+          res.send(result);
+        });
+      }
+
+      const filter = {
+        ...(email ? { "addedBy.email": email } : {}),
+        ...(searchQuery
+          ? { foodName: { $regex: searchQuery, $options: "i" } }
+          : {}),
+      };
+
+      try {
+        const options = {
+          ...(sortBy ? { sort: { [sortBy]: -1 } } : {}),
+          ...(limit ? { limit } : {}),
         };
-    
-        try {
-            const options = {
-                ...(sortBy ? { sort: { [sortBy]: -1 } } : {}), 
-                ...(limit ? { limit } : {}), 
-            };
-    
-            const result = await foodsCollection.find(filter, options).toArray();
-            res.send(result);
-        } catch (error) {
-            console.error("Error fetching foods:", error);
-            res.status(500).send({ message: "Internal Server Error" });
-        }
+
+        const result = await foodsCollection.find(filter, options)
+        .skip(page * size)
+        .limit(size)
+        .toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching foods:", error);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
     });
-    
-    
 
     // get single food
     app.get("/food/:id", async (req, res) => {
@@ -138,6 +145,7 @@ async function run() {
       const result = await foodsCollection.findOne(query);
       res.send(result);
     });
+
     // Add food item with token verification
     app.post("/foods", verifyToken, async (req, res) => {
       try {
@@ -187,24 +195,31 @@ async function run() {
     });
 
     /* ------------------------------------------------------- */
+    app.get("/foodsCount", async (req, res) => {
+      const result = await foodsCollection.estimatedDocumentCount();
+      res.send({ count: result });
+    });
+
+    /* ------------------------------------------------------- */
     // purchase related APIs
     const purchaseCollection = client.db("BiteManager").collection("purchase");
+
     app.get("/purchase", verifyToken, async (req, res) => {
-        const email = req.query.email;
-        const query = { buyerEmail: email };
-        if(req.decoded.email !== email){
-          return res.status(403).send({ message: "Forbidden access" });
-        }
+      const email = req.query.email;
+      const query = { buyerEmail: email };
+      if (req.decoded.email !== email) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
       const result = await purchaseCollection.find(query).toArray();
 
-      for(const purchase of result){
+      for (const purchase of result) {
         const query = { _id: new ObjectId(purchase.foodId) };
         const food = await foodsCollection.findOne(query);
         if (food) {
-            purchase.foodName = food.foodName;
-            purchase.price = food.price;
-            purchase.foodImage = food.foodImage;
-            purchase.foodOwner = food.addedBy.name;
+          purchase.foodName = food.foodName;
+          purchase.price = food.price;
+          purchase.foodImage = food.foodImage;
+          purchase.foodOwner = food.addedBy.name;
         }
       }
       res.send(result);
@@ -213,7 +228,7 @@ async function run() {
     // get single purchase
     app.get("/purchase/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
-      const query = { _id: new ObjectId(id) }; 
+      const query = { _id: new ObjectId(id) };
       const result = await purchaseCollection.findOne(query);
       res.send(result);
     });
@@ -228,19 +243,32 @@ async function run() {
 
     app.post("/purchase", verifyToken, async (req, res) => {
       const purchase = req.body;
-      const result = await purchaseCollection.insertOne(purchase);
-      const id = purchase.foodId;
-      const query = { _id: new ObjectId(id) };
-      const food = await foodsCollection.findOne(query);
-      if (food) {
-        await foodsCollection.updateOne(query, {
-          $set: {
-            quantity: food.quantity - purchase.quantity,
-            purchaseCount: food.purchaseCount + purchase.quantity,
-          },
-        });
+      const loggedInUserEmail = req.decoded.email;
+      const foodId = new ObjectId(purchase.foodId);
+      const food = await foodsCollection.findOne({ _id: foodId });
+
+      if (food.addedBy.email === loggedInUserEmail) {
+        return res
+          .status(403)
+          .send({ message: "You cannot purchase your own added food item." });
       }
-      res.send(result);
+
+      try {
+        const result = await purchaseCollection.insertOne(purchase);
+        const updatedFood = await foodsCollection.updateOne(
+          { _id: foodId },
+          {
+            $set: {
+              quantity: food.quantity - purchase.quantity,
+              purchaseCount: food.purchaseCount + purchase.quantity,
+            },
+          }
+        );
+        res.send(result);
+      } catch (error) {
+        console.error("Error processing purchase:", error);
+        res.status(500).send({ message: "Internal server error" });
+      }
     });
   } finally {
     // Commenting out client.close() to keep connection alive
