@@ -97,8 +97,6 @@ async function run() {
     app.get("/foods", async (req, res) => {
       const email = req.query.email;
       const searchQuery = req.query.search || "";
-      const limit = parseInt(req.query.limit) || 0;
-      const sortBy = req.query.sortBy || null;
       const page = req.query.page || 1;
       const size = req.query.size || 9;
 
@@ -122,12 +120,8 @@ async function run() {
       };
 
       try {
-        const options = {
-          ...(sortBy ? { sort: { [sortBy]: -1 } } : {}),
-          ...(limit ? { limit } : {}),
-        };
 
-        const result = await foodsCollection.find(filter, options)
+        const result = await foodsCollection.find(filter)
         .skip(page * size)
         .limit(size)
         .toArray();
@@ -137,6 +131,18 @@ async function run() {
         res.status(500).send({ message: "Internal Server Error" });
       }
     });
+
+    app.get('/limitFoods', async (req, res) => {
+      const limit = parseInt(req.query.limit) || 0;
+      const sortBy = req.query.sortBy || null;
+      const options = {
+        ...(sortBy ? { sort: { [sortBy]: -1 } } : {}),
+        ...(limit ? { limit } : {}),
+      };
+
+      const result = await foodsCollection.find({}, options).toArray();
+      res.send(result);
+    })
 
     // get single food
     app.get("/food/:id", async (req, res) => {
