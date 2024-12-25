@@ -6,11 +6,16 @@ const cookieParser = require("cookie-parser");
 const app = express();
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const e = require("express");
 
 // middleware
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: [
+      "http://localhost:5173",
+      "https://bite-manager-server.vercel.app",
+      "https://bite-manager-client-shakir.vercel.app",
+    ],
     credentials: true,
   })
 );
@@ -44,11 +49,11 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.connect();
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
 
     // auth related api
     app.post("/jwt", async (req, res) => {
@@ -60,7 +65,7 @@ async function run() {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-          maxAge: 60 * 60 * 1000, // 1 hour
+          maxAge: 60 * 60 * 1000, 
         })
         .send({ success: true });
     });
@@ -79,12 +84,25 @@ async function run() {
     // Collections
     const usersCollection = client.db("BiteManager").collection("users");
 
-    // User related APIs
     app.post("/users", async (req, res) => {
-      const user = req.body;
-      const result = await usersCollection.insertOne(user);
-      res.send(result);
-    });
+        const user = req.body;
+        console.log(user)
+      
+        try {
+          const existingUser = await usersCollection.findOne({ email: user.email });
+          console.log(existingUser);
+      
+          if (existingUser) {
+            return res.status(200).send({ message: "Welcome back! You are already signed up." });
+          }
+          const result = await usersCollection.insertOne(user);
+          res.send(result);
+        } catch (error) {
+          console.error(error);
+          res.status(500).send({ message: "An error occurred", error });
+        }
+      });
+      
 
     app.get("/users", verifyToken, async (req, res) => {
       const result = await usersCollection.find().toArray();
@@ -121,10 +139,11 @@ async function run() {
 
       try {
         const totalCount = await foodsCollection.countDocuments(filter);
-        const result = await foodsCollection.find(filter)
-        .skip(page * size)
-        .limit(size)
-        .toArray();
+        const result = await foodsCollection
+          .find(filter)
+          .skip(page * size)
+          .limit(size)
+          .toArray();
         res.send({ foods: result, totalCount });
       } catch (error) {
         console.error("Error fetching foods:", error);
@@ -132,7 +151,7 @@ async function run() {
       }
     });
 
-    app.get('/limitFoods', async (req, res) => {
+    app.get("/limitFoods", async (req, res) => {
       const limit = parseInt(req.query.limit) || 0;
       const sortBy = req.query.sortBy || null;
       const options = {
@@ -142,7 +161,7 @@ async function run() {
 
       const result = await foodsCollection.find({}, options).toArray();
       res.send(result);
-    })
+    });
 
     // get single food
     app.get("/food/:id", async (req, res) => {
@@ -277,7 +296,6 @@ async function run() {
       }
     });
   } finally {
-    // Commenting out client.close() to keep connection alive
   }
 }
 run().catch(console.dir);
