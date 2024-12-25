@@ -120,12 +120,12 @@ async function run() {
       };
 
       try {
-
+        const totalCount = await foodsCollection.countDocuments(filter);
         const result = await foodsCollection.find(filter)
         .skip(page * size)
         .limit(size)
         .toArray();
-        res.send(result);
+        res.send({ foods: result, totalCount });
       } catch (error) {
         console.error("Error fetching foods:", error);
         res.status(500).send({ message: "Internal Server Error" });
