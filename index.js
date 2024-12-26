@@ -260,11 +260,34 @@ async function run() {
 
     // delete purchase
     app.delete("/purchase/:id", verifyToken, async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await purchaseCollection.deleteOne(query);
-      res.send(result);
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+
+        const purchase = await purchaseCollection.findOne(query);
+        if (!purchase) {
+            return res.status(404).send({ message: "Order not found." });
+        }
+    
+        const foodId = new ObjectId(purchase.foodId);
+    
+        const deleteResult = await purchaseCollection.deleteOne(query);
+    
+        if (deleteResult.deletedCount === 1) {
+            await foodsCollection.updateOne(
+                { _id: foodId },
+                {
+                    $inc: {
+                        quantity: purchase.quantity, 
+                        purchaseCount: -purchase.quantity, 
+                    },
+                }
+            );
+            return res.send({ message: "Order deleted and food updated successfully." });
+        }
+    
+        res.status(500).send({ message: "Failed to delete the order." });
     });
+    
 
     app.post("/purchase", verifyToken, async (req, res) => {
       const purchase = req.body;
